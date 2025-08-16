@@ -2612,15 +2612,27 @@
 
             const handleSelectStory = async (storyId) => {
                 console.log("🔄 handleSelectStory chiamato con storyId:", storyId);
+                console.log("🔄 handleSelectStory - user:", user?.uid);
+                console.log("🔄 handleSelectStory - setView function:", typeof setView);
+                console.log("🔄 handleSelectStory - setCurrentStoryId function:", typeof setCurrentStoryId);
+                
+                if (!storyId) {
+                    console.error("❌ storyId è null o undefined");
+                    return;
+                }
                 
                 try {
-                    // Test semplice: prova a cambiare vista direttamente
-                    console.log("🧪 Test: cambio vista a 'story'");
-                    setView('story');
-                    console.log("🧪 Test: imposto currentStoryId");
+                    // Prima imposta lo storyId, poi cambia la vista
+                    console.log("🧪 Imposto currentStoryId:", storyId);
                     setCurrentStoryId(storyId);
                     
-                    // Ora prova a fare l'aggiornamento del database
+                    // Aspetta un tick per assicurarsi che currentStoryId sia aggiornato
+                    setTimeout(() => {
+                        console.log("🧪 Cambio vista a 'story'");
+                        setView('story');
+                    }, 0);
+                    
+                    // Aggiorna il database per marcare la storia come vista
                     const userDocRef = doc(db, "users", user.uid);
                     const storyDocRef = doc(db, "stories", storyId);
                     const storySnap = await getDoc(storyDocRef);
@@ -2639,8 +2651,10 @@
                 } catch (error) {
                     console.error("❌ Errore in handleSelectStory:", error);
                     // Anche in caso di errore, prova a cambiare vista
-                    setView('story');
                     setCurrentStoryId(storyId);
+                    setTimeout(() => {
+                        setView('story');
+                    }, 0);
                 }
             };
 
@@ -2687,8 +2701,13 @@
                                 </button>
                                 <button onClick={() => {
                                     console.log("🧪 Test pulsante: cambio vista a 'story'");
-                                    setCurrentStoryId('test-story-id');
-                                    setView('story');
+                                    const testStoryId = 'test-story-id-' + Date.now();
+                                    console.log("🧪 Test con storyId:", testStoryId);
+                                    setCurrentStoryId(testStoryId);
+                                    setTimeout(() => {
+                                        console.log("🧪 Cambio vista dopo impostazione storyId");
+                                        setView('story');
+                                    }, 100);
                                 }} className="btn-3d btn-3d-warning">
                                     <span className="mr-2 text-lg">🧪</span>
                                     <span className="font-semibold text-white text-sm">Test Apertura Storia</span>
@@ -2698,9 +2717,15 @@
                         {loading ? <Spinner /> : (
                             <div className="space-y-10">
                                 {myRewriteTurns.length > 0 && (
-                                    <StoryList title="Aiuto! C'è una parte di storia da modificare" stories={myRewriteTurns} onSelect={handleSelectStory} isTurn={true} isRewrite={true} userStoriesData={user.storiesData} user={user} />
+                                    <StoryList title="Aiuto! C'è una parte di storia da modificare" stories={myRewriteTurns} onSelect={(storyId) => {
+                                    console.log("📚 StoryList rewrite - onSelect chiamato con:", storyId);
+                                    handleSelectStory(storyId);
+                                }} isTurn={true} isRewrite={true} userStoriesData={user.storiesData} user={user} />
                                 )}
-                                <StoryList title="È il tuo turno di proseguire una storia..." stories={myTurns} onSelect={handleSelectStory} isTurn={true} userStoriesData={user.storiesData} user={user} />
+                                <StoryList title="È il tuo turno di proseguire una storia..." stories={myTurns} onSelect={(storyId) => {
+                                    console.log("📚 StoryList turn - onSelect chiamato con:", storyId);
+                                    handleSelectStory(storyId);
+                                }} isTurn={true} userStoriesData={user.storiesData} user={user} />
                             </div>
                         )}
                         
@@ -3099,6 +3124,18 @@
             );
         };
         const StoryList = ({ title, stories, onSelect, isTurn = false, isCreated = false, isParticipated = false, userStoriesData, isRewrite = false, isUpdate = false, user, setShowNewStoryModal }) => {
+            console.log("📚 StoryList renderizzato con:", { title, storiesCount: stories?.length, onSelectType: typeof onSelect });
+            
+            // Controllo di sicurezza per le props
+            if (!stories || !Array.isArray(stories)) {
+                console.error("❌ StoryList: stories non è un array valido:", stories);
+                return null;
+            }
+            
+            if (typeof onSelect !== 'function') {
+                console.error("❌ StoryList: onSelect non è una funzione:", onSelect);
+                return null;
+            }
             if (stories.length === 0 && title === "È il tuo turno di proseguire una storia...") {
                 return (
                        <section>
@@ -3200,7 +3237,8 @@
                     <h3 className="text-base sm:text-xl font-semibold text-orange-700 mb-4 pb-2" style={{fontFamily: "'Playfair Display', serif", letterSpacing: '0.5px', fontWeight: '600'}}>{title}</h3>
                                                  <div className="border-b-2 border-orange-200 w-full mb-4"></div>
                     <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 sm:gap-4">
-                        {stories.map(story => {
+                        {stories.filter(story => story.id).map(story => {
+                            
                             const lastSeen = userStoriesData?.[story.id]?.lastSeenTurnIndex ?? -1;
                             const turnCount = story.turnHistory?.length || 0;
                             const isActive = story.status !== 'completed';
@@ -3314,10 +3352,14 @@
                             }
 
                             return (
-                                <div key={story.id} onClick={() => {
+                                <div key={story.id} onClick={(e) => {
+                                    e.preventDefault();
+                                    e.stopPropagation();
                                     console.log("🖱️ Click su storia:", story.id, story.title);
+                                    console.log("🖱️ onSelect function:", typeof onSelect);
+                                    console.log("🖱️ Story completa:", story);
                                     onSelect(story.id);
-                                }} 
+                                }}
                                     className={`bg-gradient-to-br from-white via-slate-50 to-white rounded-2xl shadow-lg hover:shadow-2xl transition-all duration-300 cursor-pointer border-l-4 ${getBorderColor()} relative group overflow-hidden hover:scale-[1.02] hover:-translate-y-1 book-cover`}
                                     style={{
                                         transformStyle: 'preserve-3d',
@@ -4024,6 +4066,13 @@
 
         const StoryView = ({ user, storyId, setView, isAdminView = false, setViewedUserUid }) => {
             console.log("🎭 StoryView renderizzato con props:", { user: user?.uid, storyId, isAdminView });
+            
+            // Controllo di sicurezza per storyId
+            if (!storyId) {
+                console.error("❌ StoryView: storyId è null o undefined, torno alla dashboard");
+                setView('dashboard');
+                return null;
+            }
             
             const [story, setStory] = useState(null);
             const [loading, setLoading] = useState(true);
@@ -7413,6 +7462,10 @@
             // Funzione per cambiare vista con pulizia dei listener
             const changeView = (newView) => {
                 console.log("🔄 Cambio vista da", view, "a", newView);
+                console.log("🔄 changeView - view attuale:", view);
+                console.log("🔄 changeView - newView:", newView);
+                console.log("🔄 changeView - setView function:", typeof setView);
+                
                 // Pulisci tutti i listener delle notifiche quando si cambia vista
                 notificationManager.cleanupAllListeners();
                 setView(newView);
@@ -7421,11 +7474,20 @@
             const renderView = () => {
                 switch (view) {
                     case 'dashboard':
+                        console.log("🏠 Rendering Dashboard con props:", { 
+                            user: user?.uid, 
+                            setViewType: typeof changeView, 
+                            setCurrentStoryIdType: typeof setCurrentStoryId 
+                        });
                         return <Dashboard user={user} setView={changeView} setCurrentStoryId={setCurrentStoryId} />;
                     case 'library':
                         return <LibraryView user={user} setView={changeView} setCurrentStoryId={setCurrentStoryId} />;
                     case 'story':
                         console.log("🎭 Rendering StoryView con storyId:", currentStoryId);
+                        if (!currentStoryId) {
+                            console.error("❌ Tentativo di aprire StoryView senza storyId, torno alla dashboard");
+                            return <Dashboard user={user} setView={changeView} setCurrentStoryId={setCurrentStoryId} />;
+                        }
                         return <StoryView user={user} storyId={currentStoryId} setView={changeView} setViewedUserUid={setViewedUserUid} />;
                     case 'adminStoryView':
                         if (!hasAdminAccess) return <Dashboard user={user} setView={changeView} />;
